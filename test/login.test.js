@@ -13,7 +13,7 @@ let urlRoot = "https://snappfire-db.herokuapp.com";
 let urlAPI = "https://snappfire-db.herokuapp.com/api/v2";
 
 
-if(true){
+if(false){
   //---------------------------------------------------------------------
   describe("Login using test account", function() {
     let data, user, token;
@@ -29,7 +29,7 @@ if(true){
       data.success.should.equal(true);
     });
     
-    it("Signing in returns a valid token", function() {
+    it("Signing in returns a valid token", function() {      
       assert.isString(token)
     });    
 
