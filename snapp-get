@@ -1,0 +1,204 @@
+
+let {processSnapp, mongoId, findOne, find, findOneNestedData} = require('../_helpers/process')
+
+//---------------------------------------
+module.exports = {
+  //-------------------------------------
+  init: (props) => {
+    let {app, database, addRoute, io, isLive, rootUrl} = props;
+    let {LIVE_DB, TEST_DB} = database;
+    let db = isLive ? LIVE_DB : TEST_DB
+    let route = '';
+
+    //---------------------------------------
+    return new Promise((resolve, reject) => {     
+
+      /* REST */
+      //-----------------------------------------------------------------------
+      route = addRoute({type: 'get', url: '/api/v2/snapps/:skip/:limit'})
+      app[route.type](route.url, async(req, res)  => {    
+        let {skip, limit} = req.params   
+
+        limit = parseInt(limit)
+        limitPlus = parseInt(limit) + 1
+        skip = parseInt(skip)
+
+        try{
+          let docs = await find( {db, table: 'snappdata', skip, limit: limitPlus, q: {} }) 
+          docs = docs.map(x => {              
+            return processSnapp(x, 5)
+          })
+
+          res.json({
+            success: true,             
+            prev: skip - limit >= 0 ? `${rootUrl}/api/v2/snapps/${skip - limit}/${limit}` : null,
+            next: docs.length >= limitPlus ? `${rootUrl}/api/v2/snapps/${skip + limit}/${limit}` : null,
+            items: docs.splice(0, limit)            
+          })
+        }
+        catch(err){
+          res.json({success: false, reason: 'A problem occured with the search.'})
+        }
+
+      })
+      //-----------------------------------------------------------------------
+
+      //-----------------------------------------------------------------------
+      route = addRoute({type: 'get', url: '/api/v2/snapp/slug/:slug'})      
+      app[route.type](route.url, async(req, res)  => {         
+        let {slug} = req.params  
+        try{
+          let snapp = await findOne( {db, table: 'snappdata', q: {slug} }) 
+          if(!!snapp){                      
+            snapp = processSnapp(snapp, 5)            
+            res.json({success: true, count: 1, payload: snapp})
+          }
+          else{
+            res.json({success: false, reason: `No matches found with slug ${slug}`})
+          }          
+        }
+        catch(err){
+          res.json({success: false, reason: 'Invalid slug format.'})
+        }
+      })
+      //-----------------------------------------------------------------------   
+      
+      //-----------------------------------------------------------------------
+      route = addRoute({type: 'get', url: '/api/v2/snapp/id/:_id'})      
+      app[route.type](route.url, async(req, res)  => {         
+        let {_id} = req.params             
+        try{
+          let snapp = await findOne( {db, table: 'snappdata', q: {_id: mongoId(_id)} }) 
+          if(!!snapp){          
+            snapp = processSnapp(snapp, 5)    
+            res.json({success: true, count: 1, payload: snapp})
+          }
+          else{
+            res.json({success: false, reason: `No matches found with id ${id}`})
+          }          
+        }
+        catch(err){
+          res.json({success: false, reason: 'Invalid ID format.'})
+        }
+      })
+      //----------------------------------------------------------------------- 
+      
+      //-----------------------------------------------------------------------
+      route = addRoute({type: 'get', url: '/api/v2/snapp/author/:_id'})      
+      app[route.type](route.url, async(req, res)  => {         
+        let {_id} = req.params        
+
+        let matches = await find( {db, table: 'snappdata', q: {author:{_id:_id}} }) 
+        
+        matches = matches.map(x => {
+          return x._id
+        })
+        
+        if(matches.length === 0){
+          res.json({success: false, reason: `No matches found with _id ${_id}`})
+        }
+        else{      
+          res.json({success: true, count: matches.length, message: `Snapp IDs that belong to user ${_id}`,  payload: matches})
+        }
+
+      })
+      //-----------------------------------------------------------------------       
+
+      //-----------------------------------------------------------------------
+      route = addRoute({type: 'get', url: '/api/v2/snapp/random'})      
+      app[route.type](route.url, async(req, res)  => {         
+        try{
+          let snapps = await find( {db, table: 'snappdata', q: {} }) 
+          if(!!snapps){          
+            // 
+            let random = Math.floor(Math.random() * snapps.length);                   
+            let payload = processSnapp(snapps[random], 5)            
+            res.json({success: true, index: random, payload })            
+          }
+          else{
+            res.json({success: false, reason: `Could not retrieve random snapp.`})
+          }          
+        }
+        catch(err){
+          res.json({success: false, reason: 'Invalid ID format.'})
+        }
+      })
+      //-----------------------------------------------------------------------        
+      
+      
+      //-----------------------------------------------------------------------
+      route = addRoute({type: 'get', url: '/api/v2/snapp/sotd'})      
+      app[route.type](route.url, async(req, res)  => {  
+        try{
+          let snapps = await find( {db, table: 'snappdata', q: {} }) 
+          if(!!snapps){                             
+            let payload = processSnapp(snapps[0], 5)    
+            res.json({success: true, index: 0, payload })            
+          }
+          else{
+            res.json({success: false, reason: `Could not retrieve random snapp.`})
+          }          
+        }
+        catch(err){
+          res.json({success: false, reason: 'Invalid ID format.'})
+        }                     
+      })
+      //-----------------------------------------------------------------------    
+      
+      //-----------------------------------------------------------------------
+      route = addRoute({type: 'get', url: '/api/v2/snapp/comment/:_id/:skip/:limit'})      
+      app[route.type](route.url, async(req, res)  => {         
+        let {_id, skip, limit} = req.params
+        
+        limit = parseInt(limit)
+        limitPlus = parseInt(limit) + 1
+        skip = skip === 'null' ? 0 : parseInt(skip)
+
+        try{
+          let nested = await findOneNestedData({db, table: 'snappdata', q: {_id: mongoId(_id)}, field: 'comments', skip, limit: limitPlus})
+          res.json({
+            success: true, 
+            prev: skip - limit >= 0 ? `${rootUrl}/api/v2/snapp/comment/${_id}/${skip - limit}/${limit}` : null,
+            next: nested.data.length >= limitPlus ? `${rootUrl}/api/v2/snapp/comment/${_id}/${skip + limit}/${limit}` : null,
+            payload: nested.data.slice(0, limit)
+          })
+        }catch(err){
+          res.json({success: false, reason: 'Invalid ID format.'})
+        }
+
+      })
+      //-----------------------------------------------------------------------      
+
+      //-----------------------------------------------------------------------
+      route = addRoute({type: 'get', url: '/api/v2/snapp/emotedata/:_id/:skip/:limit/:emote'})      
+      app[route.type](route.url, async(req, res)  => {         
+        let {_id, skip, limit, emote} = req.params 
+
+        limit = parseInt(limit)
+        limitPlus = parseInt(limit) + 1
+        skip = skip === 'null' ? 0 : parseInt(skip)
+
+        try{
+          let nested = await findOneNestedData({db, table: 'snappdata', q: {_id: mongoId(_id)}, field: [`emotes.${emote}`], skip, limit: limitPlus})
+          res.json({
+            success: true, 
+            prev: skip - limit >= 0 ? `${rootUrl}/api/v2/snapp/emotedata/${_id}/${skip - limit}/${limit}/${emote}` : null,
+            next: nested.data.length >= limitPlus ? `${rootUrl}/api/v2/snapp/emotedata/${_id}/${skip + limit}/${limit}/${emote}` : null,
+            payload: nested.data.slice(0, limit)
+          })
+        }catch(err){
+          res.json({success: false, reason: 'Invalid ID format.'})
+        }
+
+      })
+      //-----------------------------------------------------------------------            
+             
+ 
+      resolve()
+    })
+    //---------------------------------------
+
+
+  }
+}
+//---------------------------------------

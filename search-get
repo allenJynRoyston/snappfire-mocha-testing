@@ -1,0 +1,201 @@
+
+let {processMetadata, mongoId, findOne, find, search, update, insert, droptable, deleteOne} = require('../_helpers/process')
+
+//---------------------------------------
+module.exports = {
+  //-------------------------------------
+  init: (props) => {
+    let {app, database, addRoute, io, isLive, rootUrl} = props;
+    let {LIVE_DB, TEST_DB} = database;
+    let db = isLive ? LIVE_DB : TEST_DB
+    let route = '';
+
+    //---------------------------------------
+    return new Promise((resolve, reject) => {     
+
+      /* REST */
+      //-----------------------------------------------------------------------
+      route = addRoute({type: 'get', url: '/api/v2/search/keywords/:keyword/:skip/:limit/:focus'})
+      app[route.type](route.url, async(req, res)  => {    
+        let {keyword = '', skip = 0, limit = 10, focus = 'all'} = req.params   
+
+        limit = parseInt(limit)
+        limitPlus = parseInt(limit) + 1
+        skip = parseInt(skip)
+
+        const re = (str) => { return new RegExp(str, 'gi') }        
+        let promises = []
+        
+        //--------------------------------------------
+        // SEARCH BY NAME
+        if(focus === 'all' || focus === 'names'){               
+          promises.push(new Promise( async(resolve) => {
+              let q, kw = keyword.trim().split(' ')   
+
+              switch(kw.length){
+                case 1: 
+                  q = { $or: [ { firstname: re(kw[0]) }, { lastname: !!kw[1] ? re(kw[1]) : re(kw[0]) } ] }
+                break;
+                case 2:
+                  q = { $or: [ {firstname: re(kw[0]),  lastname: !!kw[1] ? re(kw[1]) : re(kw[0])} ] }
+                break;
+                default: 
+                  q = { $or: [ { firstname: re(kw[0]) }, { lastname: !!kw[1] ? re(kw[1]) : re(kw[0]) } ] }
+                break;
+              }
+
+            let docs = await find( 
+              {db, table: 'userdata', skip, limit: limitPlus, 
+              q, 
+              only: {_id: true, slug: true, firstname: true, lastname: true, profession: true, city: true, images: true}  
+            })  
+            resolve({type: 'names', docs})
+          }))
+        }
+        //--------------------------------------------
+
+        //--------------------------------------------
+        // SEARCH BY PROFESSION
+        if(focus === 'all' || focus === 'profession'){
+          promises.push(new Promise( async(resolve) => {
+            let docs = await find({
+              db, table: 'userdata', skip, limit: limitPlus, 
+              q: { profession: {$regex: re(keyword) } },
+              only: {_id: true, slug: true, firstname: true, lastname: true, profession: true, city: true, images: true}  
+            })  
+            resolve({type: 'profession', docs})
+          }))
+        }
+        //--------------------------------------------
+
+        //--------------------------------------------
+        // SEARCH BY CITY
+        if(focus === 'all' || focus === 'city'){
+          promises.push(new Promise( async(resolve) => {
+            let docs = await find({
+              db, table: 'userdata', skip, limit: limitPlus, 
+              q: { city: {$regex: re(keyword) } },
+              only: {_id: true, slug: true, firstname: true, lastname: true, profession: true, city: true, images: true}  
+            })  
+            resolve({type: 'city', docs})
+          }))
+        }
+        //--------------------------------------------     
+           
+
+        Promise.all(promises).then( async(data) => {
+          let results = {
+            total: 0
+          }
+
+          data.forEach(x => {
+            let {type, docs} = x
+
+            if(focus == 'all' || focus === type){
+              results[type] = {
+                data: [],
+                next: null
+              }
+            }
+            
+            docs.forEach((user, index) => {
+              if(index < limit){
+                results[type].data.push(processMetadata(user))
+                results.total++
+              }
+            })                
+            if(docs.length >= limitPlus){
+              results[type].next = `${rootUrl}/api/v2/search/keywords/${keyword}/${skip + limit}/${limit}/${type}`
+            }            
+          })
+
+          res.json({success: true, results})
+        })
+
+      })
+      //-----------------------------------------------------------------------
+
+
+      //-----------------------------------------------------------------------
+      route = addRoute({type: 'get', url: '/api/v2/search/hashtags/:keyword/:skip/:limit/'})
+      app[route.type](route.url, async(req, res)  => {    
+        let {keyword = '', skip = 0, limit = 10} = req.params   
+        let kw = keyword.trim().split(',')   
+        const re = (str) => { return new RegExp(str, 'gi') }     
+        
+        limit = parseInt(limit)
+        limitPlus = parseInt(limit) + 1
+        skip = parseInt(skip)
+
+        let results = {
+          total: 0,
+          keyword,
+          data: [],
+          next: null
+        }
+
+        let or = []
+        kw.forEach(word => {
+          or.push({hashes: re(word)})
+        })
+
+        let docs = await find( 
+          {db, table: 'snappdata', skip, limit: limitPlus,           
+          q: { $or: or },
+          only: {_id: true}  
+        })          
+
+        if(docs.length >= limitPlus){
+          results.next = `${rootUrl}/api/v2/search/hashtags/${keyword}/${skip + limit}/${limit}`
+        }    
+        results.data = docs
+        results.total = docs.length
+
+        res.json({success: true, results })
+      })
+      //-----------------------------------------------------------------------
+
+      //-----------------------------------------------------------------------
+      route = addRoute({type: 'get', url: '/api/v2/search/content/:content/:skip/:limit/'})
+      app[route.type](route.url, async(req, res)  => {    
+        let {content = '', skip = 0, limit = 10} = req.params   
+        const re = (str) => { return new RegExp(str, 'gi') }     
+
+        limit = parseInt(limit)
+        limitPlus = parseInt(limit) + 1
+        skip = parseInt(skip)
+
+        let results = {
+          total: 0,
+          data: [],
+          next: null
+        }
+
+        let docs = await find( 
+          {db, table: 'snappdata', skip, limit: limitPlus,           
+          q: {content: {$regex: re(content) }},
+          only: {_id: true, content: true}  
+        })          
+
+        if(docs.length >= limitPlus){
+          results.next = `${rootUrl}/api/v2/search/content/${content}/${skip + limit}/${limit}`
+        }    
+        results.data = docs
+        results.total = docs.length
+
+        res.json({success: true, results })
+      })
+      
+      
+      resolve()
+    })
+    //---------------------------------------
+
+    
+
+
+    
+
+  }
+}
+//---------------------------------------

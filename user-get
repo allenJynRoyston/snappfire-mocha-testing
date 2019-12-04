@@ -1,0 +1,279 @@
+
+let {processUser, mongoId, findOne, find, findOneNestedData} = require('../_helpers/process')
+
+//---------------------------------------
+module.exports = {
+  //-------------------------------------
+  init: (props) => {
+    let {app, database, addRoute, io, isLive, rootUrl} = props;
+    let {LIVE_DB, TEST_DB} = database;
+    let db = isLive ? LIVE_DB : TEST_DB
+    let route = '';
+
+    //---------------------------------------
+    return new Promise((resolve, reject) => {     
+
+      /* REST */
+      //-----------------------------------------------------------------------
+      route = addRoute({type: 'get', url: '/api/v2/users/:skip/:limit'})
+      app[route.type](route.url, async(req, res)  => {    
+        let {skip, limit} = req.params   
+
+        limit = parseInt(limit)
+        limitPlus = parseInt(limit) + 1
+        skip = parseInt(skip)
+
+        try{
+          let docs = await find( {db, table: 'userdata', skip, limit: limitPlus, q: {} }) 
+          docs = docs.map(x => {              
+            return processUser(x, 5)
+          })
+
+          res.json({
+            success: true,             
+            prev: skip - limit >= 0 ? `${rootUrl}/api/v2/users/${skip - limit}/${limit}` : null,
+            next: docs.length >= limitPlus ? `${rootUrl}/api/v2/users/${skip + limit}/${limit}` : null,
+            items: docs.splice(0, limit)            
+          })
+        }
+        catch(err){
+          res.json({success: false, reason: 'A problem occured with the search.'})
+        }
+
+      })
+      //-----------------------------------------------------------------------
+
+      //-----------------------------------------------------------------------
+      route = addRoute({type: 'get', url: '/api/v2/user/_id/:_id'})
+      app[route.type](route.url, async(req, res)  => {         
+        let {_id} = req.params            
+        try{
+          let user = await findOne( {db, table: 'userdata', q: {_id: mongoId(_id)} }) 
+          if(!!user){          
+            user = processUser(user, 5)    
+            res.json({success: true, count: 1, payload: user})
+          }
+          else{
+            res.json({success: false, reason: `No matches found with id ${id}`})
+          }          
+        }
+        catch(err){
+          res.json({success: false, reason: 'Invalid ID format.'})
+        }
+      })
+      //-----------------------------------------------------------------------    
+
+      //-----------------------------------------------------------------------
+      route = addRoute({type: 'get', url: '/api/v2/user/_id/:_id/all'})
+      app[route.type](route.url, async(req, res)  => {         
+        let {_id} = req.params            
+        try{
+          let user = await findOne( {db, table: 'userdata', q: {_id: mongoId(_id)} }) 
+          if(!!user){    
+            user.tally = {      
+              feed: user.feed.length,
+              snapps: user.snapps.length,
+              comments: user.comments.length,
+              followers: user.followers.length,
+              following: user.following.length            
+            }
+            res.json({success: true, count: 1, payload: user})
+          }
+          else{
+            res.json({success: false, reason: `No matches found with id ${id}`})
+          }          
+        }
+        catch(err){
+          res.json({success: false, reason: 'Invalid ID format.'})
+        }
+      })
+      //-----------------------------------------------------------------------          
+
+
+      //-----------------------------------------------------------------------
+      route = addRoute({type: 'get', url: '/api/v2/user/slug/:slug'})
+      app[route.type](route.url, async(req, res)  => {         
+        let {slug} = req.params        
+
+        try{
+          let user = await findOne( {db, table: 'userdata', q: {slug} }) 
+          if(!!user){          
+            user = processUser(user, 5)    
+            res.json({success: true, count: 1, payload: user})
+          }
+          else{
+            res.json({success: false, reason: `No matches found with id ${id}`})
+          }          
+        }
+        catch(err){
+          res.json({success: false, reason: 'Invalid ID format.'})
+        }
+
+      })
+      //-----------------------------------------------------------------------  
+
+      
+      //-----------------------------------------------------------------------
+      route = addRoute({type: 'get', url: '/api/v2/user/followers/:_id/:skip/:limit'})      
+      app[route.type](route.url, async(req, res)  => {      
+        let {_id, skip, limit} = req.params 
+
+        limit = parseInt(limit)
+        limitPlus = parseInt(limit) + 1
+        skip = skip === 'null' ? 0 : parseInt(skip)
+
+        try{
+          let nested = await findOneNestedData({db, table: 'userdata', q: {_id: mongoId(_id)}, field: 'followers', skip, limit: limitPlus})
+          res.json({
+            success: true, 
+            prev: skip - limit >= 0 ? `${rootUrl}/api/v2/user/followers/${_id}/${skip - limit}/${limit}` : null,
+            next: nested.data.length >= limitPlus ? `${rootUrl}/api/v2/user/followers/${_id}/${skip + limit}/${limit}` : null,
+            payload: nested.data.slice(0, limit)
+          })
+        }catch(err){
+          res.json({success: false, reason: 'Invalid ID format.'})
+        }
+      })
+      //-----------------------------------------------------------------------  
+
+      //-----------------------------------------------------------------------
+      route = addRoute({type: 'get', url: '/api/v2/user/following/:_id/:skip/:limit'})      
+      app[route.type](route.url, async(req, res)  => {      
+        let {_id, skip, limit} = req.params 
+
+        limit = parseInt(limit)
+        limitPlus = parseInt(limit) + 1
+        skip = skip === 'null' ? 0 : parseInt(skip)
+
+        try{
+          let nested = await findOneNestedData({db, table: 'userdata', q: {_id: mongoId(_id)}, field: 'following', skip, limit: limitPlus})
+          res.json({
+            success: true, 
+            prev: skip - limit >= 0 ? `${rootUrl}/api/v2/user/following/${_id}/${skip - limit}/${limit}` : null,
+            next: nested.data.length >= limitPlus ? `${rootUrl}/api/v2/user/following/${_id}/${skip + limit}/${limit}` : null,
+            payload: nested.data.slice(0, limit)
+          })
+        }catch(err){
+          res.json({success: false, reason: 'Invalid ID format.'})
+        }
+      })
+      //-----------------------------------------------------------------------        
+     
+      //-----------------------------------------------------------------------
+      route = addRoute({type: 'get', url: '/api/v2/user/feed/:_id/:skip/:limit'})      
+      app[route.type](route.url, async(req, res)  => {         
+        let {_id, skip, limit} = req.params 
+
+        limit = parseInt(limit)
+        limitPlus = parseInt(limit) + 1
+        skip = skip === 'null' ? 0 : parseInt(skip)
+
+        try{
+          let nested = await findOneNestedData({db, table: 'userdata', q: {_id: mongoId(_id)}, field: 'feed', skip, limit: limitPlus})
+          res.json({
+            success: true, 
+            prev: skip - limit >= 0 ? `${rootUrl}/api/v2/user/feed/${_id}/${skip - limit}/${limit}` : null,
+            next: nested.data.length >= limitPlus ? `${rootUrl}/api/v2/user/feed/${_id}/${skip + limit}/${limit}` : null,
+            payload: nested.data.slice(0, limit)
+          })
+        }catch(err){
+          res.json({success: false, reason: 'Invalid ID format.'})
+        }
+      })
+      //-----------------------------------------------------------------------
+
+      //-----------------------------------------------------------------------
+      route = addRoute({type: 'get', url: '/api/v2/user/snapps/:_id/:skip/:limit'})      
+      app[route.type](route.url, async(req, res)  => {         
+        let {_id, skip, limit} = req.params 
+
+        limit = parseInt(limit)
+        limitPlus = parseInt(limit) + 1
+        skip = skip === 'null' ? 0 : parseInt(skip)
+
+        try{
+          let nested = await findOneNestedData({db, table: 'userdata', q: {_id: mongoId(_id)}, field: 'snapps', skip, limit: limitPlus})
+          res.json({
+            success: true, 
+            prev: skip - limit >= 0 ? `${rootUrl}/api/v2/user/snapps/${_id}/${skip - limit}/${limit}` : null,
+            next: nested.data.length >= limitPlus ? `${rootUrl}/api/v2/user/snapps/${_id}/${skip + limit}/${limit}` : null,
+            payload: nested.data.slice(0, limit)
+          })
+        }catch(err){
+          res.json({success: false, reason: 'Invalid ID format.'})
+        }
+
+      })
+      //-----------------------------------------------------------------------      
+
+      //-----------------------------------------------------------------------
+      route = addRoute({type: 'get', url: '/api/v2/user/listofsnapps/:_id'})      
+      app[route.type](route.url, async(req, res)  => {         
+        let {_id} = req.params 
+        try{
+          let matches = await find( {db, table: 'snappdata', q: {[author._id]:_id} }) 
+          if(!!snapps){          
+            res.json({success: true, matches})
+          }
+          else{
+            res.json({success: false, reason: `No matches found with id ${id}`})
+          }          
+        }
+        catch(err){
+          res.json({success: false, reason: 'Invalid ID format.'})
+        }
+      })
+      //-----------------------------------------------------------------------            
+
+
+      //-----------------------------------------------------------------------
+      route = addRoute({type: 'get', url: '/api/v2/user/check/:type/:_id/:firstIndex'})      
+      app[route.type](route.url, async(req, res)  => {         
+        let {_id, firstIndex, type} = req.params 
+        try{
+          let user = await findOne( {db, table: 'userdata', q: {_id: mongoId(_id)} }) 
+          newIndex = user[type].findIndex(x => x === firstIndex) 
+          
+          let zeroIndex = user[type][0] || 'null'
+          
+          payload = {  
+            user:{
+              _id
+            },
+            count: {
+              total: user[type].length, 
+              altered: (firstIndex === 'null' && zeroIndex === 'null') ? false : firstIndex !== zeroIndex,
+              new: firstIndex === null ? user[type].length : newIndex === -1 ? user[type].length : newIndex
+            }
+          }
+          res.json({success: true, payload})
+        } 
+        catch(err){
+          res.json({success: false, reason: `Could not find user with id ${_id}.`})
+        }       
+      })
+      //-----------------------------------------------------------------------     
+
+      //-----------------------------------------------------------------------
+      route = addRoute({type: 'get', url: '/api/v2/user/checkfollowerstatus/:_id/:uid'})      
+      app[route.type](route.url, async(req, res)  => {         
+        let {_id, uid} = req.params 
+        try{
+          let user = await findOne( {db, table: 'userdata', q: {_id: mongoId(_id)} })           
+          res.json({success: true, following: user.following.findIndex(x => x === uid) >= 0})
+        } 
+        catch(err){
+          res.json({success: false, reason: `Could not find user with id ${_id}.`})
+        }       
+      })
+      //-----------------------------------------------------------------------           
+      
+
+      resolve()
+    })
+    //---------------------------------------
+
+
+  }
+}
+//---------------------------------------

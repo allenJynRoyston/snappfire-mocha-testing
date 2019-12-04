@@ -1,0 +1,70 @@
+const axios = require('axios')
+let {findOne, insert} = require('../_helpers/process')
+
+
+//---------------------------------------
+module.exports = {
+  //-------------------------------------
+  init: (props) => {
+    let {app, database, addRoute, io, isLive} = props;
+    let {LIVE_DB, TEST_DB} = database;
+    let db = isLive ? LIVE_DB : TEST_DB
+    let route = '';
+
+    //---------------------------------------
+    return new Promise((resolve, reject) => {     
+ 
+      /* REST */
+      //-----------------------------------------------------------------------
+      route = addRoute({type: 'post', url: '/api/v2/fetch/opengraph'})      
+      app[route.type](route.url, async(req, res)  => {                 
+        let {ids} = req.body
+        
+
+        let promises = []
+        try{
+          // first, process the images into entries
+          ids.forEach(url => {
+            promises.push(new Promise( async(resolve) => {          
+              let doc = await findOne( {db, table: 'ogdata', q: {url} })      
+              if(!!doc){                    
+                resolve({success: true, item: doc})
+              }
+              else{
+                let og = await axios.get(`https://opengraph-scrapper-uploader.glitch.me/opengraph?url=${url}`)
+                let {success, ogurl, description, image} = og.data
+                if(success){
+                  let newog = await insert({db, table: 'ogdata', item: {url: ogurl, description, image} })   
+                  if(newog.insertedCount === 1){               
+                    resolve({success: true, item: newog.ops[0]})
+                  }
+                }
+                else{
+                  resolve({success: false})
+                }         
+              }
+            }))
+          })
+    
+    
+    
+          // then add to cover image
+          Promise.all(promises).then((results) => {      
+            let payload = results.map(x => {            
+              return x.item
+            })
+            res.json({success: true, payload})
+          })
+        }
+        catch(err){
+          res.json({success: false, reason: 'Problem with processing Opengraph data.'})
+        }
+        
+      })
+      //-----------------------------------------------------------------------   
+
+      resolve()
+    })
+
+  }
+}

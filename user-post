@@ -1,0 +1,45 @@
+let {processMetadata, mongoId, findOne, find, update, insert, droptable, deleteOne} = require('../_helpers/process')
+
+
+//---------------------------------------
+module.exports = {
+  //-------------------------------------
+  init: (props) => {
+    let {app, database, addRoute, io, isLive} = props;
+    let {LIVE_DB, TEST_DB} = database;
+    let db = isLive ? LIVE_DB : TEST_DB
+    let route = '';
+
+    //---------------------------------------
+    return new Promise((resolve, reject) => {     
+      //-----------------------------------------------------------------------      
+      route = addRoute({type: 'post', url: '/api/v2/user/metadata/ids', example: {}})      
+      app[route.type](route.url, async(req, res)  => {                 
+        let {ids} = req.body
+
+        try{
+          ids = ids.map(id => { return mongoId(id) })
+          let users = await find( {db, table: 'userdata', limit: ids.length, q: {_id: {$in: ids}} })   
+          
+          //------------  just get metadata
+          let payload = users.map(x => {
+            return processMetadata(x)
+          })
+
+          res.json({success: true, payload})
+        }
+        catch(err){
+          res.json({success: false, reason: 'Error fetching metadata.'})
+        }
+
+      })
+      //-----------------------------------------------------------------------   
+
+      resolve()
+    })
+    //---------------------------------------
+
+
+  }
+}
+//---------------------------------------

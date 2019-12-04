@@ -13,7 +13,7 @@ let urlRoot = "https://snappfire-db.herokuapp.com";
 let urlAPI = "https://snappfire-db.herokuapp.com/api/v2";
 
 
-if(false){
+if(true){
   //---------------------------------------------------------------------
   describe("Check if search/hashtag is successful:", function() {
     let data, results;
@@ -23,10 +23,12 @@ if(false){
       data = res.data  
       results = res.data.results.data        
     })
-
+    
+    //---------------------------------------------------
     it("Endpoint /api/v2/search/hashtags/:hashtag/:skip/:limit is successful", function() {
       data.success.should.equal(true);
     });
+    //---------------------------------------------------
 
   });
   //---------------------------------------------------------------------
@@ -41,18 +43,21 @@ if(false){
       data = res.data  
       results = res.data.results.data
     })
-
+    
+    //---------------------------------------------------
     it("Endpoint /api/v2/search/content/:content/:skip/:limit is successful", function() {
       data.success.should.equal(true);
     });
+    //---------------------------------------------------
 
+    //---------------------------------------------------
     it("Search result is valid", function() {    
       if(results.length > 0){
         let item = results[0]
         assert.isString(item.content)
       }
     });
-
+    //---------------------------------------------------
 
   });
   //---------------------------------------------------------------------

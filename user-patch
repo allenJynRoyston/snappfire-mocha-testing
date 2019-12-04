@@ -1,0 +1,200 @@
+let {processUser, mongoId, findOne, find, findIndexOfNestedArray, update, insert, droptable, deleteOne, validateToken} = require('../_helpers/process')
+const {newImage} = require('../_create/create')
+
+//---------------------------------------
+module.exports = {
+  //-------------------------------------
+  init: (props) => {
+    let {app, database, addRoute, io, isLive} = props;
+    let {LIVE_DB, TEST_DB} = database;
+    let db = isLive ? LIVE_DB : TEST_DB
+    let route = '';
+
+    //---------------------------------------
+    return new Promise((resolve, reject) => {     
+ 
+      /* REST */      
+      //-----------------------------------------------------------------------      
+      route = addRoute({type: 'patch', url: '/api/v2/user/patch/profileimage', example: {}})      
+      app[route.type](route.url, async(req, res)  => {                 
+        try{
+          let {_id, imagedata} = req.body
+          //-------------------- UPDATE USERDATA
+          let doc = await update({  db,  table: 'userdata',  q: {_id: mongoId(_id)},  set: {$inc: {version: 1}, $push: {['images.profile']:  {$each: [String(imagedata._id)], $position: 0 }}} })                 
+          let user = processUser(doc.item)
+          io.in(_id).emit(_id, {fn: 'updateuser', data: {user}}) 
+          setTimeout(() => {
+            io.in(_id).emit(_id, {fn: 'triggerUserCheck', data: {_id, type: 'feed'}})  
+            io.in(_id).emit(_id, {fn: 'triggerUserCheck', data: {_id, type: 'followers'}})  
+            io.in(_id).emit(_id, {fn: 'triggerUserCheck', data: {_id, type: 'snapps'}})  
+          }, 100)           
+          res.json({success: true, message: 'Update successful'})
+          //--------------------
+        }
+        catch(err){
+          res.json({success: false, reason: 'Error creating user.'})
+        }
+      })
+      //-----------------------------------------------------------------------       
+      
+      //-----------------------------------------------------------------------      
+      route = addRoute({type: 'patch', url: '/api/v2/user/patch/coverimage', example: {}})      
+      app[route.type](route.url, async(req, res)  => {                 
+        try{
+          let {_id, imagedata} = req.body
+          //-------------------- UPDATE USERDATA
+          let doc = await update({  db,  table: 'userdata',  q: {_id: mongoId(_id)},  set: {$inc: {version: 1}, $push: {['images.cover']:  {$each: [String(imagedata._id)], $position: 0 }}} })                 
+          let user = processUser(doc.item)
+          io.in(_id).emit(_id, {fn: 'updateuser', data: {user}}) 
+          setTimeout(() => {
+            io.in(_id).emit(_id, {fn: 'triggerUserCheck', data: {_id, type: 'feed'}})  
+            io.in(_id).emit(_id, {fn: 'triggerUserCheck', data: {_id, type: 'followers'}})  
+            io.in(_id).emit(_id, {fn: 'triggerUserCheck', data: {_id, type: 'snapps'}})  
+          }, 100)           
+          res.json({success: true, message: 'Update successful'})
+          //--------------------
+        }
+        catch(err){
+          res.json({success: false, reason: 'Error creating user.'})
+        }
+      })
+      //-----------------------------------------------------------------------             
+
+      //-----------------------------------------------------------------------      
+      route = addRoute({type: 'patch', url: '/api/v2/user/patch/userdetails', example: {}})      
+      app[route.type](route.url, async(req, res)  => {                 
+        try{
+          let {_id} = req.body
+          delete req.body['_id']          
+          let doc = await update({  db,  table: 'userdata',  q: {_id: mongoId(_id)},  set: {$set: req.body}  })                           
+          let user = processUser(doc.item)
+          io.in(_id).emit(_id, {fn: 'updateuser', data: {user}})        
+          setTimeout(() => {
+            io.in(_id).emit(_id, {fn: 'triggerUserCheck', data: {_id, type: 'feed'}})  
+            io.in(_id).emit(_id, {fn: 'triggerUserCheck', data: {_id, type: 'followers'}})  
+            io.in(_id).emit(_id, {fn: 'triggerUserCheck', data: {_id, type: 'snapps'}})  
+          }, 100)               
+          res.json({success: true})
+        }
+        catch(err){
+          res.json({success: false, reason: 'Error creating user.'})
+        }
+      })
+      //-----------------------------------------------------------------------   
+
+      //-----------------------------------------------------------------------      
+      route = addRoute({type: 'patch', url: '/api/v2/user/patch/alias', example: {}})      
+      app[route.type](route.url, async(req, res)  => {                 
+        try{
+          let {_id, alias} = req.body
+
+          // double check before adding it
+          let exists = await findOne( {db, table: 'userdata', q:  {alias} }) || null       
+
+          if(!!exists){
+            res.json({success: false, reason: 'Alias already in use.'})
+            return
+          }
+
+          let slug = `${alias}`.toLowerCase().replace(/ /g,"_");   
+              alias = `${alias}`.toLowerCase().replace(/ /g,"_"); 
+
+          let doc = await update({  db,  table: 'userdata',  q: {_id: mongoId(_id)},  set: {$set: {slug, alias}}  })                           
+          let user = processUser(doc.item)
+
+          io.in(_id).emit(_id, {fn: 'updateuser', data: {user}})        
+          setTimeout(() => {
+            io.in(_id).emit(_id, {fn: 'triggerUserCheck', data: {_id, type: 'feed'}})  
+            io.in(_id).emit(_id, {fn: 'triggerUserCheck', data: {_id, type: 'followers'}})  
+            io.in(_id).emit(_id, {fn: 'triggerUserCheck', data: {_id, type: 'snapps'}})  
+          }, 100)               
+          res.json({success: true})
+
+        }
+        catch(err){
+          res.json({success: false, reason: 'Error creating user.'})
+        }
+      })
+      //-----------------------------------------------------------------------         
+
+      //-----------------------------------------------------------------------      
+      route = addRoute({type: 'patch', url: '/api/v2/user/patch/slug', example: {}})      
+      app[route.type](route.url, async(req, res)  => {                 
+        try{
+          let {_id} = req.body
+          delete req.body['_id']          
+          let doc = await update({  db,  table: 'userdata',  q: {_id: mongoId(_id)},  set: {$set: req.body}  })                           
+          let user = processUser(doc.item)
+          io.in(_id).emit(_id, {fn: 'updateuser', data: {user}})        
+          setTimeout(() => {
+            io.in(_id).emit(_id, {fn: 'triggerUserCheck', data: {_id, type: 'feed'}})  
+            io.in(_id).emit(_id, {fn: 'triggerUserCheck', data: {_id, type: 'followers'}})  
+            io.in(_id).emit(_id, {fn: 'triggerUserCheck', data: {_id, type: 'snapps'}})  
+          }, 100)               
+          res.json({success: true})
+        }
+        catch(err){
+          res.json({success: false, reason: 'Error creating user.'})
+        }
+      })
+      //-----------------------------------------------------------------------         
+
+      //-----------------------------------------------------------------------
+      route = addRoute({type: 'patch', url: '/api/v2/user/patch/addtofollowing', example: {_id: '123', uid: '234'}})      
+      app[route.type](route.url, async(req, res)  => {         
+        let {_id, uid} = req.params      
+        try{         
+          await update({  db,  table: 'userdata',  q: {_id: mongoId(_id)},  set: {$inc: {version: 1}, $push: {following:  {$each: [String(uid)], $position: 0 }}} })                 
+          io.in(_id).emit(_id, {fn: 'triggerUserCheck', data: {_id, type: 'following'}})   
+          res.json({success: true})       
+        }
+        catch(err){
+          res.json({success: false, reason: 'Invalid ID format.'})
+        }
+      })
+      //-----------------------------------------------------------------------  
+
+      //-----------------------------------------------------------------------      
+      route = addRoute({type: 'patch', url: '/api/v2/user/patch/changefollowingstatus', example: {}})      
+      app[route.type](route.url, async(req, res)  => {                 
+        let {_id, uid, token} = req.body
+
+        try{   
+          if(!await validateToken({db, _id, token})){
+            res.json({success: false, reason: 'Validation token failed'})
+            return false
+          }
+
+          let exists = await findIndexOfNestedArray({db, table: 'userdata', q: {_id: mongoId(_id)}, field: 'following', id: uid})
+
+          if(exists.index === -1){
+            await update({  db,  table: 'userdata',  q: {_id: mongoId(_id)},  set: {$inc: {version: 1}, $push: {following:  {$each: [String(uid)], $position: 0 }}} })                 
+            await update({  db,  table: 'userdata',  q: {_id: mongoId(uid)},  set: {$inc: {version: 1}, $push: {followers:  {$each: [String(_id)], $position: 0 }}} })                 
+            io.in(uid).emit(uid, {fn: 'triggerUserCheck', data: {_id: uid, type: 'followers'}})   
+            io.in(_id).emit(_id, {fn: 'triggerUserCheck', data: {_id, type: 'following'}})   
+            res.json({success: true, following: true})
+          }
+          else{            
+            await update({  db,  table: 'userdata',  q: {_id: mongoId(_id)},  set: {$inc: {version: 1}, $pull: {following: uid}} })  
+            await update({  db,  table: 'userdata',  q: {_id: mongoId(uid)},  set: {$inc: {version: 1}, $pull: {followers: _id}} })  
+            io.in(uid).emit(uid, {fn: 'triggerUserCheck', data: {_id: uid, type: 'followers'}})   
+            io.in(_id).emit(_id, {fn: 'triggerUserCheck', data: {_id, type: 'following'}})   
+            res.json({success: true, following: false})        
+          }
+
+        }
+        catch(err){
+          res.json({success: false, reason: 'Error fetching metadata.'})
+        }
+
+      })
+      //-----------------------------------------------------------------------               
+      
+      resolve()
+    })
+    //---------------------------------------
+
+
+  }
+}
+//---------------------------------------

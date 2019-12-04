@@ -1,0 +1,230 @@
+let {processSnapp, mongoId, findOne, find, update, insert, updateMany} = require('../_helpers/process')
+const {newSnapp, newComment, usableEmotes} = require('../_create/create')
+
+const mapIds = (arr) => {  
+  return arr.map(id => {return mongoId(id)})  
+}
+
+//---------------------------------------
+module.exports = {
+  //-------------------------------------
+  init: (props) => {
+    let {app, database, addRoute, io, isLive} = props;
+    let {LIVE_DB, TEST_DB} = database;
+    let db = isLive ? LIVE_DB : TEST_DB
+    let route = '';
+
+    //---------------------------------------
+    return new Promise((resolve, reject) => {     
+ 
+      /* REST */
+      //-----------------------------------------------------------------------
+      route = addRoute({type: 'post', url: '/api/v2/snapps/ids', example: {ids: ['id1', 'id2', 'id3']}})      
+      app[route.type](route.url, async(req, res)  => {                 
+        let {ids} = req.body
+        try{
+          ids = ids.map(id => { return mongoId(id) })
+          let payload = await find( {db, table: 'snappdata', limit: ids.length, q: {_id: {$in: ids}} })      
+          
+          
+          payload = payload.map(x => {              
+            return processSnapp(x, 5)
+          })  
+
+          res.json({success: true, payload})
+        }
+        catch(err){
+          res.json({success: false, reason: 'Error fetching metadata.'})
+        }
+
+      })
+      //-----------------------------------------------------------------------   
+
+      //-----------------------------------------------------------------------      
+      route = addRoute({type: 'post', url: '/api/v2/snapp/create', example: {}})      
+      app[route.type](route.url, async(req, res)  => {       
+        try{
+          let {userid, type, shareid, content, hashes, links, nametags, strLength } = req.body
+
+          // GET USERS DETAILS
+          let user = await findOne( {db, table: 'userdata', q: {_id: mongoId(userid)} })          
+
+          // CREATE NEW SNAPP, INSERT INTO DB
+          let item = await newSnapp({user, type, shareid, content, hashes, links, nametags, strLength })
+          let results = await insert({db, table: 'snappdata', item})  
+          let snapp = results.ops[0];
+
+          
+          // UPDATE SLUG AS ID
+          await update({  db,  table: 'snappdata',  q: {_id: mongoId(snapp._id)},  set: {$set: {slug: String(snapp._id)}, $push: {attachedTo:  {$each: [...user.followers, ...[userid]], $position: 0 }}} })             
+          
+          // UPDATE AUTHOR          
+          await update({  db,  table: 'userdata',  q: {_id: mongoId(userid)},  set: {$inc: {version: 1}, $push: {snapps:  {$each: [String(snapp._id)], $position: 0 }}} })                 
+
+          // UPDATE FOLLOWER FEEDS
+          user.followers.push(userid) // add self to list
+          await updateMany({  db,  table: 'userdata',  q: {_id: {$in: mapIds(user.followers)} },  set: {$inc: {version: 1}, $push: {feed:  {$each: [String(snapp._id)], $position: 0 }}} })
+
+          user.followers.forEach(_id => {
+            io.in(_id).emit(_id, {fn: 'triggerUserCheck', data: {_id, type: 'feed'}})   
+          })
+
+          res.json({success: true, snapp})
+        }
+        catch(err){
+          res.json({success: false, reason: 'Error creating snapp.'})
+        }
+      })
+      //-----------------------------------------------------------------------   
+
+      //-----------------------------------------------------------------------      
+      route = addRoute({type: 'post', url: '/api/v2/snapp/create/comment', example: {}})      
+      app[route.type](route.url, async(req, res)  => {       
+        try{
+          let {userid, snappid, type, content, hashes, links, nametags, strLength } = req.body;          
+          
+
+          // GET USERS DETAILS
+          let user = await findOne( {db, table: 'userdata', q: {_id: mongoId(userid)} })     
+
+          // GET SNAPP DETAILS
+          let doc = await findOne( {db, table: `snappdata`, q: {_id: mongoId(snappid)} })               
+          
+
+          // // CREATE AND INSERT NEW ITEM
+          let item = await newSnapp({user, doc, type, content, hashes, links, nametags, strLength})          
+          let results = await insert({db, table: 'snappdata', item })      
+          let comment = results.ops[0];
+
+          // UPDATE SLUG AS ID
+          await update({  db,  table: 'snappdata',  q: {_id: mongoId(comment._id)},  set: {$set: {slug: String(comment._id)}, $push: {attachedTo:  {$each: [...user.followers, ...[userid]], $position: 0 }}} })              
+
+          // UPDATE SNAPP   
+          await update({  db,  table: `snappdata`,  q: {_id: mongoId(snappid)},  set: {$inc: {version: 1}, $push: {comments:  {$each: [String(comment._id)], $position: 0 }}} })                 
+
+          // UPDATE AUTHOR
+          await update({  db,  table: 'userdata',  q: {_id: mongoId(userid)},  set: {$inc: {version: 1}, $push: {comments:  {$each: [String(comment._id)], $position: 0 }}} })                 
+
+          res.json({success: true, comment})
+        }
+        catch(err){
+          res.json({success: false, reason: 'Error creating comments.'})
+        }
+      })
+      //-----------------------------------------------------------------------         
+
+      //-----------------------------------------------------------------------      
+      route = addRoute({type: 'post', url: '/api/v2/snapp/update', example: {}})      
+      app[route.type](route.url, async(req, res)  => { 
+        try{
+          let {_id, content } = req.body                 
+          delete req.body['_id']
+
+          await update({  db,  table: 'snappdata',  q: {_id: mongoId(_id)},  set: {$inc: {version: 1}, $set: req.body} })                 
+          
+          
+          // update via socket
+          io.in(_id).emit(_id, {fn: 'contentupdate', data: {_id, ...req.body}})  
+
+          res.json({success: true})
+        }
+        catch(err){
+          res.json({success: false, reason: 'Error updating snapp.'})
+        }
+      })
+      //-----------------------------------------------------------------------               
+
+      //-----------------------------------------------------------------------      
+      route = addRoute({type: 'post', url: '/api/v2/snapp/add/emote', example: {}})      
+      app[route.type](route.url, async(req, res)  => {       
+        try{
+          let {_id, userid, type } = req.body                 
+          let snapp = await findOne({  db,  table: 'snappdata',  q: {_id: mongoId(_id)} })
+          let exists = snapp.emotes[type].findIndex(x => x === userid) >= 0
+          if(!exists){
+
+            // add new emote
+            await update({  db,  table: 'snappdata',  q: {_id: mongoId(_id)},  set: {$push: {[`emotes.${type}`]:  {$each: [String(userid)], $position: 0 }}} })                 
+
+            // remove old emotes
+            let filtered = usableEmotes().filter(x => {if(x !== type){return x}})
+            let dislikes = {}
+            filtered.forEach(emote => {
+              dislikes[`emotes.${emote}`] = userid
+            })
+            await update({  db,  table: 'snappdata',  q: {_id: mongoId(_id)},  set: {$inc: {version: 1}, $pull: dislikes} })    
+          }
+          res.json({success: true, exists})
+        }
+        catch(err){
+          res.json({success: false, reason: 'Error updating snapp.'})
+        }
+      })
+      //-----------------------------------------------------------------------        
+      
+      //-----------------------------------------------------------------------      
+      route = addRoute({type: 'post', url: '/api/v2/snapp/remove/emote', example: {}})      
+      app[route.type](route.url, async(req, res)  => { 
+        try{
+          let {_id, userid, type } = req.body                 
+          await update({  db,  table: 'snappdata',  q: {_id: mongoId(_id)},  set: {$inc: {version: 1}, $pull: {[`emotes.${type}`]: userid}} })                 
+          res.json({success: true})
+        }
+        catch(err){
+          res.json({success: false, reason: 'Error updating snapp.'})
+        }
+      })
+      //-----------------------------------------------------------------------              
+      
+
+      //-----------------------------------------------------------------------
+      route = addRoute({type: 'post', url: '/api/v2/snapp/checkcounts'})      
+      app[route.type](route.url, async(req, res)  => {         
+        let {_id, type, userid, firstid} = req.body     
+
+        let doc = await findOne( {db, table: 'snappdata', q: {_id: mongoId(_id)} }) 
+
+        if(!!doc){
+
+          let areNew = firstid === 'null' ? doc.comments.length : doc.comments.findIndex(x => x === firstid)      
+
+          let payload = {
+            _id,
+            type,
+            version: doc.version,   
+            emotes: {},   
+            counts:{      
+              comments: {
+                already: userid !== null ? doc.comments.findIndex(x => x === userid) >= 0 : null,
+                total: doc.comments.length,
+              },              
+              emotes: {},
+              newComments: areNew
+            }
+          }  
+
+          for (const [key, value] of Object.entries(doc.emotes)) {
+            payload.counts.emotes[key] = {
+              already: userid !== null ? doc.emotes[key].findIndex(x => x === userid) >= 0 : null,
+              total: doc.emotes[key].length
+            }
+            payload.emotes[key] = doc.emotes[key].slice(0, 3)
+          }
+
+          res.json({success: true, payload})
+        }
+        else{
+          res.json({success: false, reason: `No ${type} document found with id: ${_id}.`})
+        }        
+      })
+      //-----------------------------------------------------------------------           
+      
+ 
+      resolve()
+    })
+    //---------------------------------------
+
+
+  }
+}
+//---------------------------------------

@@ -1,0 +1,102 @@
+
+let {mongoId, findOne, find, update, insert, droptable, deleteOne, verifyToken} = require('../_helpers/process')
+
+let {deleteSnapp} = require('../_delete/delete')
+
+//---------------------------------------
+module.exports = {
+  //-------------------------------------
+  init: (props) => {
+    let {app, database, addRoute, io, isLive} = props;
+    let {LIVE_DB, TEST_DB} = database;
+    let db = isLive ? LIVE_DB : TEST_DB
+    let route = '';
+
+    //---------------------------------------
+    return new Promise((resolve, reject) => {     
+ 
+      /* REST */
+      //-----------------------------------------------------------------------
+      route = addRoute({type: 'delete', url: '/api/v2/snapp/delete/:_id/:uid/:token', example: {}})      
+      app[route.type](route.url, async(req, res)  => {                 
+        let {_id, uid, token} = req.params
+
+        // check if user is valid
+        let user = await findOne({db,  table: 'logindata',  q: {uid} })      
+        if(!user){            
+          res.json({success: false, reason: 'Invalid email or password'})
+          return
+        }
+
+        // check if token is valid
+        let {email, tokenkeyword} = user
+        let isValid = await verifyToken(tokenkeyword, email, token)
+        if(!isValid){
+          res.json({success: false, reason: 'Invalid token or token keyword.'})
+          return
+        }
+
+        // check if document is valid and is owner
+        let snapp = await findOne({db,  table: 'snappdata',  q: {_id: mongoId(_id)} }) 
+        if(!snapp){     
+          res.json({success: false, reason: 'Document Id or author Id does not match.'})
+          return
+        }   
+
+        // delete snapp routine  *PATCH THIS UP LATER */
+        let success       
+        if(snapp.type === 'root'){
+          success = await deleteSnapp({ db, ids:[_id], io })
+        }
+        else{
+          await update({  db,  table: 'snappdata',  q: {_id: mongoId(_id)},  set: {$inc: {version: 1}, $set: {isDeleted: true, content: 'This content has been deleted.'} } })                        
+          success = true
+        }        
+        res.json({success})
+      })
+      //-----------------------------------------------------------------------   
+
+      //-----------------------------------------------------------------------
+      route = addRoute({type: 'delete', url: '/api/v2/snapp/deletefromfeed/:_id/:uid/:token', example: {}})      
+      app[route.type](route.url, async(req, res)  => {                 
+        let {_id, uid, token} = req.params
+
+        // check if user is valid
+        let user = await findOne({db,  table: 'logindata',  q: {uid} })      
+        if(!user){            
+          res.json({success: false, reason: 'Invalid email or password'})
+          return
+        }
+
+        // check if token is valid
+        let {email, tokenkeyword} = user
+        let isValid = await verifyToken(tokenkeyword, email, token)
+        if(!isValid){
+          res.json({success: false, reason: 'Invalid token or token keyword.'})
+          return
+        }
+
+        // check if document is valid and is owner
+        let snapp = await findOne({db,  table: 'snappdata',  q: {_id: mongoId(_id) } }) 
+        if(!snapp){     
+          res.json({success: false, reason: 'Document Id or author Id does not match.'})
+          return
+        }   
+
+        // delete snapp routine  *PATCH THIS UP LATER */
+        let success = await deleteSnapp({ db, ids:[_id], io })   
+        
+        res.json({success})
+      })
+      //-----------------------------------------------------------------------         
+
+
+   
+      resolve()
+    })
+    //---------------------------------------
+
+
+  }
+}
+//---------------------------------------
